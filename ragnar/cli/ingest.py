@@ -3,6 +3,7 @@ import argparse
 import os
 from pathlib import Path
 from typing import List
+from dotenv import load_dotenv
 
 from tqdm import tqdm
 from qdrant_client import QdrantClient
@@ -34,6 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Drop & recreate the collection")
     p.add_argument("--batch-size", type=int, default=64,
                    help="Embedding batch size")
+    p.add_argument("--dotenv-path",
+                   help="Path to a .env file to load before resolving env vars")
 
     # Embeddings (remote OpenAI-compatible)
     p.add_argument("--embed-api-base",
@@ -76,9 +79,10 @@ def _resolve_required(name: str, cli_val: str | None, env_var: str) -> str:
     """Return CLI value or env var; if both empty, exit with a clear message."""
     val = cli_val or os.getenv(env_var)
     if not val:
+        dash = name.replace("_", "-")
         raise SystemExit(
-            f"[!] Missing required '{name}'. Provide --{name.replace('_', '-')} "
-            f"or set {env_var}."
+            f"[!] Missing required '{name}'. Provide --{dash}, or set {env_var}, "
+            f"or pass a .env file via --dotenv-file."
         )
     return val
 
@@ -133,6 +137,13 @@ def _ensure_config_exists(cfg_path: Path) -> None:
 
 def main(argv: List[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
+
+    # Load users .env if provided
+    if args.dotenv_path:
+        env_path = Path(args.dotenv_path)
+        if not env_path.exists():
+            raise SystemExit(f"[!] --dotenv-path not found: {env_path}")
+        load_dotenv(env_path, override=False)
 
     # Resolve required/optional params from CLI or env
     embed_api_base = _resolve_required("embed_api_base", args.embed_api_base, "EMBED_API_BASE")
