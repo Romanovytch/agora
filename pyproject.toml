@@ -1,6 +1,6 @@
 [project]
 name = "ragnar"
-version = "0.1.2"
+version = "0.1.3"
 requires-python = ">=3.10"
 description = "RAG utilities and app backend for CanaR (Insee)"
 readme = "README.md"
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ragnar-ingest = "ragnar.ingest_utilitr:main"
+ragnar-ingest = "ragnar.cli.ingest:main"
 ragnar-config = "ragnar.cli.config:main"
 
 [project.optional-dependencies]
