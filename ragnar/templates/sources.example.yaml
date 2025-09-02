@@ -7,10 +7,9 @@ defaults:
   follow_symlinks: false
 
 sources:
-  handbook-example:
+  utilitr:
     kind: markdown_repo
-    repo_path: "../handbook"
-    base_url: "https://docs.example.org/"
-    repo_url_template: "https://github.com/ExampleOrg/handbook/blob/{commit}/{path}"
-    include_globs: ["**/*.md"]
-    default_lang: "en"
+    repo_path: "../utilitR"
+    base_url: "https://book.utilitr.org/"
+    repo_url_template: "https://github.com/InseeFrLab/utilitR/blob/{commit}/{path}"
+    default_lang: "fr"
