@@ -1,35 +1,55 @@
+# RAGnaR
+
 [🇫🇷 Français](README.fr.md) | [🇬🇧 English](README.md)
 
-# How to use RAGnaR
+**RAGnaR** is a document ingestion pipeline for Retrieval Augmented Generation (RAG). It ships a command line interface (CLI) to:
 
-RAGnaR is a data ingestion pipeline used to prepare data for Retrieval Augmented Generation for CanaR.
+- Configure **what to ingest** (sources, paths, filters)
+- Control **how to chunk** docs (target / overlap / max tokens)
+- **Embed** chunks via an OpenAI-compatible embeddings endpoint
+- **Store** vectors + payload in **Qdrant**
 
-## Virtual env setup
+RAGnaR is designed for **technical documentation** and handles code blocks well. It is particularly suited for internal-specifics coding practices and documentations.
 
-(Optional) First you should use a virtual environment it's best practice:
+Pair it with [CanaR](https://github.com/Romanovytch/canar), a Streamlit chat UI that queries Qdrant to deliver effective RAG answers with citations.
 
-```shell
-cd RAGnaR
+## Features
+
+- 🧩 **Config-driven sources** via `sources.yaml`
+- ✂️ **Code-aware chunker** for Markdown/Quarto (no splitting fenced code)
+- 🔤 OpenAI-compatible **remote embeddings** (e.g., vLLM)
+- 📦 **Qdrant** vector store (cosine)
+- 🧭 Rich payload: breadcrumbs, chapter/section, token counts, URLs
+- ✅ **Validation** for configs with helpful errors
+
+## Requirements
+
+- **Python** ≥ 3.10
+- A running **Qdrant** instance
+- A running **embeddings** endpoint (OpenAI-compatible), e.g vLLM serving `bge-multilingual-gemma2`
+
+## Install 
+
+```
+# optional but recommended: use a virtualenv
 python -m venv .venv
 source .venv/bin/activate
-```
 
-## Download dependencies
-
-RAGnaR has a `requirements.txt` listing all the dependencies and their minimal versions and a `pyproject.toml` as well:
-
-```shell
+# from repo root
 pip install -U pip
 pip install -e .
 ```
-Depending on your machine and network, it can take some time.
+This installs the CLI binaries: `ragnar-config` and `ragnar-ingest`.
 
-## Environement variables
 
-You can either add the environment variables manually or add them in a `.env` file at the root of `ragnar/`.
+## Environment variables
+
+You can pass credentials/URLs either via **CLI flags**, **environment variables**, or a **.env file**.
+
+Example `.env`:
 
 ```
-# Embedding model env vars
+# Embeddings
 EMBED_API_BASE="https://my-embeddings-model-url/v1"
 EMBED_API_KEY="api-key"
 EMBED_MODEL="model-name"
@@ -39,56 +59,140 @@ QDRANT_API_KEY="api-key"
 QDRANT_URL="http://qdrant:6333"
 ```
 
-## Data
+> The ingest CLI will use CLI args first, then env vars, and can also load a `.env` file via `--dotenv-file`.
 
-For now, RAGnaR is only stable for markdown documents ingestion. You will need to clone the repository containing the markdown documents locally.
+
+## Data compatibility
+
+Stable today:
+
+- Markdown: `*.md`
+- RM arkdown: `*.rmd`
+- Quarto: `*.qmd` (include books)
+
+> *We plan to support HTML files for the 1.0 release via dedicated HTML source/chunker*
+
+Have your docs available locally (e.g., clone next to the repo):
 
 ```shell
 cd ..
 git clone https://github.com/InseeFrLab/utilitR.git
 ``` 
 
+## Configure sources (`sources.yaml`)
+
+Create a starter file:
+
+```bash
+ragnar-config init
+```
+
+This command will create a pre-configured `sources.yaml`. Edit the `sources:` section and add a source. For Markdown/Quarto use `kind: markdown_repo`.
+
+### Fields
+
+* `kind` **(required)**: must be `markdown_repo` for `.md` , `.rmd` or `.qmd` documents.
+* `repo_path` **(required)**: path to the folder with your docs (absolute or relative to this YAML file)
+* `base_url` **(required)**: public docs base URL used to build citation links
+* `repo_url_template` *(optional)*: template for repo links, e.g. https://github.com/org/repo/blob/{commit}/{path}
+* `default_lang` *(optional)*: if the main language of your documents is different than default *english*
+* `exclude_dirs`, `include_globs` *(optional)*
+
+Example of config for the project [utilitR](https://book.utilitr.org/) :
+
+```yaml
+version: 1
+
+defaults:
+  include_globs: ["**/*.md", "**/*.qmd", "**/*.Rmd"]
+  exclude_dirs: [".git", "_book", "docs", ".quarto", "renv", ".github", "node_modules", "build", "dist", "site"]
+  default_lang: "en"
+  follow_symlinks: false
+
+sources:
+  utilitr:
+    kind: markdown_repo
+    repo_path: "../utilitR"
+    base_url: "https://book.utilitr.org/"
+    repo_url_template: "https://github.com/InseeFrLab/utilitR/blob/{commit}/{path}"
+    default_lang: "fr"
+    exclude_dirs: [".git", "_book", "docs", ".quarto", "renv", ".github"]
+```
+
+Validate your config YAML at any time:
+
+```
+ragnar-config validate --file config/sources.yaml
+```
+
+
 ## Usage
 
-To launch data ingestion, you can use multiple parameters that are listed by `ragnar-ingest --help`
+Once your config validates, ingest one source into Qdrant:
 
 ```
-usage: Ingest utilitR into Qdrant (remote embeddings) [-h] --repo-path REPO_PATH --collection COLLECTION [--qdrant-url QDRANT_URL] [--qdrant-api-key QDRANT_API_KEY] [--drop-collection]
-                                                      [--target-tokens TARGET_TOKENS] [--overlap-tokens OVERLAP_TOKENS] [--max-tokens MAX_TOKENS] [--batch-size BATCH_SIZE] [--embed-api-base EMBED_API_BASE]
-                                                      [--embed-api-key EMBED_API_KEY] [--embed-model EMBED_MODEL] [--embed-timeout EMBED_TIMEOUT] [--embed-ca-bundle EMBED_CA_BUNDLE] [--embed-insecure]
-                                                      [--no-progress] [--log-level LOG_LEVEL]
+# using .env, single source in YAML:
+ragnar-ingest \
+  --sources-config-path config/sources.yaml \
+  --collection utilitr_v1 \
+  --dotenv-file config/.env
+```
 
-options:
-  -h, --help            show this help message and exit
-  --repo-path REPO_PATH
-  --collection COLLECTION
-  --qdrant-url QDRANT_URL
-  --qdrant-api-key QDRANT_API_KEY
+You can also pass everything explicitly:
+
+```
+ragnar-ingest \
+  --sources-config-path config/sources.yaml \
+  --source utilitr \
+  --collection utilitr_v1 \
+  --embed-api-base https://my-embeddings.example.com/v1 \
+  --embed-model BAAI/bge-multilingual-gemma2 \
+  --qdrant-url http://localhost:6333 \
   --drop-collection
-  --target-tokens TARGET_TOKENS
-  --overlap-tokens OVERLAP_TOKENS
-  --max-tokens MAX_TOKENS
-  --batch-size BATCH_SIZE
-  --embed-api-base EMBED_API_BASE
-  --embed-api-key EMBED_API_KEY
-  --embed-model EMBED_MODEL
-  --embed-timeout EMBED_TIMEOUT
-  --embed-ca-bundle EMBED_CA_BUNDLE
-  --embed-insecure
-  --no-progress         Disable progress bars
-  --log-level LOG_LEVEL
-                        DEBUG, INFO, WARNING, ERROR
 ```
 
-`--embed-api-base`, `--embed-api-key`, `--embed-model`, `--qdrant-url`, `--qdrant-api-key` don't need to be specified if already set in `.env`.
+### CLI help (abridged)
 
-By default :
-* `--target-tokens` = 800
-* `--max-tokens` = 1200
-* `--overlap-tokens` = 120
-
-Example of usage :
-```shell
-# Read all .md from the utilitR project and create a Qdrant collection named "utilitr_v1"
-ragnar-ingest --repo-path ../utilitR --collection utilitr_v1
 ```
+usage: ragnar-ingest [-h]
+                     [--sources-config-path PATH]
+                     [--source NAME]
+                     --collection NAME
+                     [--dotenv-file PATH]
+                     [--embed-api-base URL] [--embed-model ID] [--embed-api-key KEY]
+                     [--qdrant-url URL] [--qdrant-api-key KEY]
+                     [--insecure]
+                     [--target-tokens N] [--overlap-tokens N] [--max-tokens N]
+                     [--batch-size N] [--drop-collection]
+
+Ingest one source from sources.yaml into Qdrant.
+
+If a required value is missing, the CLI will suggest:
+- passing a CLI flag,
+- setting an env var,
+- or supplying a .env file via --dotenv-file.
+```
+
+Defaults:
+
+* `--target-tokens` = `800`
+* `--max-tokens` = `1200`
+* `--overlap-tokens` = `120`
+* `--batch-size` = `64`
+
+## Roadmap
+
+- HTML site ingestion (e.g., pkgdown) via an html_site source + HtmlChunker
+- Basic ingest quality checks (CLI `ragnar-analyze` to warn user about potential chunking issues with given parameters)
+- Optional metrics logging (MLflow)
+- Multi-source orchestration in a single run
+- Implement BM25 / Hybrid methods and a router
+
+## Contributing
+
+Issues and PRs welcome! Please open an issue to discuss large changes before submitting a PR. (A full CONTRIBUTING.md is coming soon.)
+
+## License
+
+TBD (to be confirmed by maintainers).
+@ Insee
