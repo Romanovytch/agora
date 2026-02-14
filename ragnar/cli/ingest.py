@@ -82,14 +82,14 @@ def _resolve_required(name: str, cli_val: str | None, env_var: str) -> str:
         dash = name.replace("_", "-")
         raise SystemExit(
             f"[!] Missing required '{name}'. Provide --{dash}, or set {env_var}, "
-            f"or pass a .env file via --dotenv-file."
+            f"or pass a .env file via --dotenv-path."
         )
     return val
 
 
 def _resolve_optional(cli_val: str | None, env_var: str, default: str = "") -> str:
     """Return CLI value or env var; if both empty, return default."""
-    return cli_val if cli_val is not None else (os.getenv(env_var) or default)
+    return (cli_val or os.getenv(env_var) or default)
 
 
 def _pick_single_source(resolved: dict, requested: str | None) -> tuple[str, object]:
