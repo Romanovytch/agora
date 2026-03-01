@@ -1,0 +1,22 @@
+name: "Documentation"
+description: "Docs update or improvement"
+title: "[Docs]: "
+labels: ["type:docs", "priority:low", "needs-docs"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      placeholder: "Update README/Docs to mention …"
+    validations:
+      required: true
+
+  - type: textarea
+    id: changes
+    attributes:
+      label: Proposed changes
+      placeholder: |
+        - [ ] Add section …
+        - [ ] Fix …
+    validations:
+      required: true

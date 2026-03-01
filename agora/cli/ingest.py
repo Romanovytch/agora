@@ -1,50 +1,50 @@
 from __future__ import annotations
+
 import argparse
 import os
 from pathlib import Path
-from typing import List
+
 from dotenv import load_dotenv
-
-from tqdm import tqdm
 from qdrant_client import QdrantClient
+from tqdm import tqdm
 
-from ragnar.sources.loader import validate_and_resolve
-from ragnar.sources.registry import build_source
-from ragnar.chunking import MarkdownChunker, Chunk
-from ragnar.embeddings.remote import RemoteOpenAIEncoder
-from ragnar.vectorstores.qdrant_store import ensure_collection_dense, upsert_dense
-from ragnar.util import make_chunk_id, slugify, count_tokens
+from agora.chunking import Chunk, MarkdownChunker
+from agora.embeddings.remote import RemoteOpenAIEncoder
+from agora.sources.loader import validate_and_resolve
+from agora.sources.registry import build_source
+from agora.util import count_tokens, make_chunk_id, slugify
+from agora.vectorstores.qdrant_store import ensure_collection_dense, upsert_dense
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="ragnar-ingest",
+        prog="agora-ingest",
         description="Ingest one source from sources.yaml into Qdrant",
     )
-    p.add_argument("--sources-config-path", default="sources.yaml",
-                   help="Path to sources.yaml (default: ./sources.yaml)")
-    p.add_argument("--source",
-                   help="Source name under `sources:`. "
-                        "If omitted and YAML has exactly one source, that one is used.")
-    p.add_argument("--collection", required=True,
-                   help="Qdrant collection name")
-    p.add_argument("--qdrant-url",
-                   help="Qdrant endpoint, e.g. http://qdrant:6333")
+    p.add_argument(
+        "--sources-config-path",
+        default="sources.yaml",
+        help="Path to sources.yaml (default: ./sources.yaml)",
+    )
+    p.add_argument(
+        "--source",
+        help="Source name under `sources:`. "
+        "If omitted and YAML has exactly one source, that one is used.",
+    )
+    p.add_argument("--collection", required=True, help="Qdrant collection name")
+    p.add_argument("--qdrant-url", help="Qdrant endpoint, e.g. http://qdrant:6333")
     p.add_argument("--qdrant-api-key", help="Qdrant API key (optional)")
-    p.add_argument("--drop-collection", action="store_true",
-                   help="Drop & recreate the collection")
-    p.add_argument("--batch-size", type=int, default=64,
-                   help="Embedding batch size")
-    p.add_argument("--dotenv-path",
-                   help="Path to a .env file to load before resolving env vars")
+    p.add_argument("--drop-collection", action="store_true", help="Drop & recreate the collection")
+    p.add_argument("--batch-size", type=int, default=64, help="Embedding batch size")
+    p.add_argument("--dotenv-path", help="Path to a .env file to load before resolving env vars")
 
     # Embeddings (remote OpenAI-compatible)
-    p.add_argument("--embed-api-base",
-                   help="Embeddings API base, e.g. https://vllm.example/v1")
+    p.add_argument("--embed-api-base", help="Embeddings API base, e.g. https://vllm.example/v1")
     p.add_argument("--embed-model", help="Embedding model id")
     p.add_argument("--embed-api-key", default="", help="Embeddings API key (optional)")
-    p.add_argument("--insecure", action="store_true",
-                   help="Skip TLS verify for embeddings (dev only)")
+    p.add_argument(
+        "--insecure", action="store_true", help="Skip TLS verify for embeddings (dev only)"
+    )
 
     # Chunking knobs (can later be driven by YAML policy)
     p.add_argument("--target-tokens", type=int, default=800)
@@ -89,7 +89,7 @@ def _resolve_required(name: str, cli_val: str | None, env_var: str) -> str:
 
 def _resolve_optional(cli_val: str | None, env_var: str, default: str = "") -> str:
     """Return CLI value or env var; if both empty, return default."""
-    return (cli_val or os.getenv(env_var) or default)
+    return cli_val or os.getenv(env_var) or default
 
 
 def _pick_single_source(resolved: dict, requested: str | None) -> tuple[str, object]:
@@ -127,15 +127,15 @@ def _ensure_config_exists(cfg_path: Path) -> None:
         raise SystemExit(
             f"\n[!] Config file not found: {rel}\n"
             "    To create a starter file:\n"
-            f"      ragnar-config init\n"
+            f"      agora-config init\n"
             "    Then validate it:\n"
-            f"      ragnar-config validate --file {rel}\n"
+            f"      agora-config validate --file {rel}\n"
             "    Finally, run ingestion with:\n"
-            f"      ragnar-ingest --sources-config-path {rel} --collection <name> ...\n"
+            f"      agora-ingest --sources-config-path {rel} --collection <name> ...\n"
         )
 
 
-def main(argv: List[str] | None = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
 
     # Load users .env if provided
@@ -211,9 +211,10 @@ def main(argv: List[str] | None = None) -> None:
     embeddings = []
     texts = [c.text for c in chunks]
     for i in tqdm(range(0, len(texts), args.batch_size), desc="Embedding", unit="batch"):
-        batch = texts[i:i+args.batch_size]
+        batch = texts[i : i + args.batch_size]
         embeddings.append(enc.encode(batch, batch_size=len(batch)))
     import numpy as np
+
     vecs = np.vstack(embeddings)
 
     # 7) Upsert

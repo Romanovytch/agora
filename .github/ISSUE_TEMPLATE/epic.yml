@@ -1,0 +1,124 @@
+name: "Epic"
+description: "High-level initiative spanning multiple issues/PRs"
+title: "[Epic]: "
+labels: ["type:epic", "priority:medium"]
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective / Outcome
+      description: What is the outcome this epic should achieve? (user value + why now)
+      placeholder: |
+        In 1–3 sentences:
+        - What changes for users/contributors?
+        - Why is this important?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Background, constraints, and current state.
+      placeholder: |
+        - Current behavior:
+        - Constraints (infra/security/time):
+        - Assumptions:
+    validations:
+      required: false
+
+  - type: textarea
+    id: scope_in
+    attributes:
+      label: In scope
+      description: What is included in this epic?
+      placeholder: |
+        - ...
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope_out
+    attributes:
+      label: Out of scope
+      description: What is explicitly NOT included (to avoid scope creep)?
+      placeholder: |
+        - ...
+        - ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: deliverables
+    attributes:
+      label: Deliverables
+      description: Concrete deliverables (features, docs, tests, migration, etc.)
+      placeholder: |
+        - Feature(s):
+        - Documentation:
+        - Tests/benchmarks:
+        - Migration/compat:
+    validations:
+      required: true
+
+  - type: textarea
+    id: subissues
+    attributes:
+      label: Sub-issues
+      description: List the issues that compose this epic (create issues using templates, then link here).
+      placeholder: |
+        - [ ] #123
+        - [ ] #124
+        - [ ] #125
+    validations:
+      required: false
+
+  - type: textarea
+    id: milestones
+    attributes:
+      label: Milestones / Phases
+      description: Optional phased plan with dependencies.
+      placeholder: |
+        Phase 1:
+        - ...
+        Phase 2:
+        - ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Definition of Done (DoD)
+      description: How do we know this epic is complete?
+      placeholder: |
+        - [ ] All sub-issues closed (or explicitly moved out)
+        - [ ] Docs updated
+        - [ ] Tests added/passing
+        - [ ] Release notes / migration notes (if applicable)
+    validations:
+      required: true
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks / Open questions
+      description: What could block this? What needs decisions?
+      placeholder: |
+        - Risk:
+        - Decision needed:
+        - Unknown:
+    validations:
+      required: false
+
+  - type: textarea
+    id: deps
+    attributes:
+      label: Dependencies
+      description: External dependencies or other epics/issues.
+      placeholder: |
+        Depends on #...
+        Blocked by #...
+    validations:
+      required: false

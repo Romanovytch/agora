@@ -1,0 +1,62 @@
+name: "Feature request"
+description: "Suggest a new feature or improvement"
+title: "[Feature]: "
+labels: ["type:feature", "priority:medium"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / Motivation
+      description: What problem are you trying to solve?
+      placeholder: "As a user, I want… so that…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like to happen?
+      placeholder: "Add support for… / Change the UI to…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      placeholder: "Alternative approaches…"
+    validations:
+      required: false
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope / Tasks
+      description: Break down the work if possible
+      placeholder: |
+        - [ ] Task 1
+        - [ ] Task 2
+        - [ ] Task 3
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How do we know it’s done?
+      placeholder: |
+        - [ ] …
+        - [ ] …
+    validations:
+      required: true
+
+  - type: textarea
+    id: deps
+    attributes:
+      label: Dependencies
+      description: Does this depend on other issues/PRs?
+      placeholder: "Depends on #123"
+    validations:
+      required: false

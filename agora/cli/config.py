@@ -1,12 +1,13 @@
 from __future__ import annotations
+
 import argparse
 import sys
-from pathlib import Path
 from importlib.resources import files
+from pathlib import Path
 
 from pydantic import ValidationError
 
-from ragnar.sources.loader import validate_and_resolve
+from agora.sources.loader import validate_and_resolve
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -14,7 +15,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     if dest.exists() and not args.force:
         print(f"[!] {dest} already exists. Use --force to overwrite.", file=sys.stderr)
         return 1
-    template = files("ragnar.templates").joinpath("sources.example.yaml")
+    template = files("agora.templates").joinpath("sources.example.yaml")
     content = template.read_text(encoding="utf-8")
     dest.write_text(content, encoding="utf-8")
     print(f"[ok] Wrote template to {dest}")
@@ -45,7 +46,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="ragnar-config", description="RAGnaR config utilities")
+    p = argparse.ArgumentParser(prog="agora-config", description="agora config utilities")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     p_init = sub.add_parser("init", help="Create a sources.yaml from the packaged template")

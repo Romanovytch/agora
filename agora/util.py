@@ -1,19 +1,25 @@
 from __future__ import annotations
+
 import re
-import yaml
 import subprocess
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any
+
+import yaml
 
 
 def _get_tokenizer():
     try:
         import tiktoken
+
         return tiktoken.get_encoding("cl100k_base")
     except Exception:
+
         class _Fallback:
-            def encode(self, text): return text.split()
+            def encode(self, text):
+                return text.split()
+
         return _Fallback()
 
 
@@ -39,12 +45,12 @@ def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="ignore")
 
 
-def extract_frontmatter(text: str) -> Tuple[Dict[str, Any], str]:
+def extract_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     if text.startswith("---\n"):
         end = text.find("\n---", 4)
         if end != -1:
             fm = text[4:end]
-            body = text[end + 4:]
+            body = text[end + 4 :]
             try:
                 data = yaml.safe_load(fm) or {}
                 if not isinstance(data, dict):
@@ -58,8 +64,7 @@ def extract_frontmatter(text: str) -> Tuple[Dict[str, Any], str]:
 def git_head_commit(repo_path: Path) -> str | None:
     try:
         out = subprocess.check_output(
-            ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
-            stderr=subprocess.DEVNULL, text=True
+            ["git", "-C", str(repo_path), "rev-parse", "HEAD"], stderr=subprocess.DEVNULL, text=True
         ).strip()
         return out
     except Exception:

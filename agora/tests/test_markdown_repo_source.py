@@ -1,8 +1,9 @@
 from __future__ import annotations
-from pathlib import Path
-import textwrap
 
-from ragnar.sources.markdown_source import MarkdownRepoSource, DocRecord
+import textwrap
+from pathlib import Path
+
+from agora.sources.markdown_source import DocRecord, MarkdownRepoSource
 
 
 def _w(p: Path, s: str) -> None:
@@ -51,8 +52,16 @@ def test_markdown_repo_basic(tmp_path: Path):
         assert "text" in d.__dict__
         m = d.metadata
         # shape compatibility with utilitR adapter
-        for k in ["source", "source_type", "file_path", "doc_title", "source_url",
-                  "repo_url", "git_commit", "lang"]:
+        for k in [
+            "source",
+            "source_type",
+            "file_path",
+            "doc_title",
+            "source_url",
+            "repo_url",
+            "git_commit",
+            "lang",
+        ]:
             assert k in m
 
     # Check title inference & URLs

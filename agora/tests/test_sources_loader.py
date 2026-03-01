@@ -1,12 +1,14 @@
 # tests/test_sources_loader.py
 from __future__ import annotations
-from pathlib import Path
+
 import textwrap
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
-from ragnar.sources.loader import validate_and_resolve
-from ragnar.sources.models.markdown_repo import MarkdownRepoConfig
+from agora.sources.loader import validate_and_resolve
+from agora.sources.models.markdown_repo import MarkdownRepoConfig
 
 
 def _write_yaml(p: Path, s: str) -> None:
@@ -76,8 +78,8 @@ def test_override_defaults_preserved(tmp_path: Path):
     )
     resolved = validate_and_resolve(cfg)
     hb = resolved["hb"]
-    assert hb.include_globs == ["**/*.md"]   # user value kept
-    assert hb.default_lang == "fr"           # user value kept
+    assert hb.include_globs == ["**/*.md"]  # user value kept
+    assert hb.default_lang == "fr"  # user value kept
     assert hb.exclude_dirs == [".git", "build"]  # default came through
 
 
@@ -202,6 +204,6 @@ def test_multiple_sources_resolve_independently(tmp_path: Path):
     )
     resolved = validate_and_resolve(cfg)
     one, two = resolved["one"], resolved["two"]
-    assert one.default_lang == "fr"                 # source override
-    assert two.include_globs == ["**/*.qmd"]        # source override
+    assert one.default_lang == "fr"  # source override
+    assert two.include_globs == ["**/*.qmd"]  # source override
     assert one.base_url.endswith("/") and two.base_url.endswith("/")  # normalized
