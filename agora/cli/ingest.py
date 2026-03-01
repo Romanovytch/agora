@@ -92,6 +92,7 @@ def _resolve_optional(cli_val: str | None, env_var: str, default: str = "") -> s
     return cli_val or os.getenv(env_var) or default
 
 
+
 def _pick_single_source(resolved: dict, requested: str | None) -> tuple[str, object]:
     """Return (name, typed_config) for exactly one source.
 
