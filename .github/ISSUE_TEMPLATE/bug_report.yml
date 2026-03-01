@@ -1,0 +1,92 @@
+name: "Bug report"
+description: "Report a reproducible bug"
+title: "[Bug]: "
+labels: ["type:bug", "priority:medium"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the sections below so we can reproduce and fix it.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened? What did you expect to happen?
+      placeholder: "CanaR crashes when…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Provide clear steps (and minimal sample inputs if possible)
+      placeholder: |
+        1. Configure .env with …
+        2. Run `docker compose up -d`
+        3. Run `canar` / `ragnar-ingest …`
+        4. Click / run …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: "It should…"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior / logs
+      description: Paste error messages, stack traces, or logs (redact secrets)
+      render: shell
+    validations:
+      required: false
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "low"
+        - "medium"
+        - "high"
+        - "critical"
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, Docker version, etc.
+      placeholder: |
+        - OS: Ubuntu 24.04 / Windows 11 + WSL2
+        - Python: 3.12.x
+        - Docker: 26.x
+        - CanaR/AgoRa version or commit:
+        - Qdrant version:
+        - Postgres version:
+    validations:
+      required: false
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: Paste relevant parts of `.env`, `sources.yaml`, or config files (redact secrets)
+      render: yaml
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Anything else? Screenshots? Related issues?
+    validations:
+      required: false

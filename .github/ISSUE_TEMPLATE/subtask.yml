@@ -1,0 +1,94 @@
+name: "Sub-task"
+description: "Small scoped implementation task (usually part of an epic)"
+title: "[Task]: "
+labels: ["type:task", "priority:medium"]
+body:
+  - type: input
+    id: epic
+    attributes:
+      label: Epic link
+      description: Link to the parent epic (if any).
+      placeholder: "#123"
+    validations:
+      required: false
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What is the single outcome of this task?
+      placeholder: |
+        Implement ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is included / excluded for this task?
+      placeholder: |
+        In:
+        - ...
+        Out:
+        - ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: Proposed approach
+      description: Optional implementation notes or design sketch.
+      placeholder: |
+        - Files/modules likely touched:
+        - Data model changes:
+        - CLI/UI changes:
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Concrete checks to consider it done.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: testplan
+    attributes:
+      label: Test plan
+      description: How will we test it? (unit/integration/manual steps)
+      placeholder: |
+        - Unit tests:
+        - Manual steps:
+        - Edge cases:
+    validations:
+      required: false
+
+  - type: textarea
+    id: docs
+    attributes:
+      label: Docs / Changelog
+      description: What docs need updates? Any user-facing changes?
+      placeholder: |
+        - README:
+        - Example config:
+        - Changelog:
+    validations:
+      required: false
+
+  - type: textarea
+    id: deps
+    attributes:
+      label: Dependencies
+      description: Does this depend on other issues/PRs?
+      placeholder: |
+        Depends on #...
+        Blocks #...
+    validations:
+      required: false

@@ -1,9 +1,17 @@
 from __future__ import annotations
-from typing import List
-from qdrant_client import QdrantClient
-from qdrant_client.http.models import VectorParams, Distance, PointStruct
-from qdrant_client.http.models import Filter, FieldCondition, MatchValue, ScoredPoint
+
 import numpy as np
+from qdrant_client import QdrantClient
+from qdrant_client.http.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    MatchValue,
+    PointStruct,
+    ScoredPoint,
+    VectorParams,
+)
+
 from ..chunking import Chunk
 
 
@@ -30,13 +38,17 @@ def ensure_collection_dense(client: QdrantClient, name: str, dim: int, drop: boo
         client.delete_collection(name)
     if not client.collection_exists(name):
         client.create_collection(
-            collection_name=name,
-            vectors_config=VectorParams(size=dim, distance=Distance.COSINE)
+            collection_name=name, vectors_config=VectorParams(size=dim, distance=Distance.COSINE)
         )
 
 
-def upsert_dense(client: QdrantClient, collection: str, chunks: List[Chunk],
-                 vectors: np.ndarray, start_index: int = 0):
+def upsert_dense(
+    client: QdrantClient,
+    collection: str,
+    chunks: list[Chunk],
+    vectors: np.ndarray,
+    start_index: int = 0,
+):
     """Upsert points (vector + payload) for the given chunks.
 
     Each chunk is stored as a single point with:
@@ -64,16 +76,19 @@ def upsert_dense(client: QdrantClient, collection: str, chunks: List[Chunk],
     """
     points = []
     for j, c in enumerate(chunks):
-        points.append(PointStruct(
-            id=c.id,
-            vector=vectors[j].tolist(),
-            payload=c.metadata | {"text": c.text}
-        ))
+        points.append(
+            PointStruct(id=c.id, vector=vectors[j].tolist(), payload=c.metadata | {"text": c.text})
+        )
     client.upsert(collection_name=collection, points=points)
 
 
-def search_dense(client: QdrantClient, collection: str, query_vec: list[float], top_k: int = 5,
-                 source: str | None = None) -> List[ScoredPoint]:
+def search_dense(
+    client: QdrantClient,
+    collection: str,
+    query_vec: list[float],
+    top_k: int = 5,
+    source: str | None = None,
+) -> list[ScoredPoint]:
     """Search nearest chunks by vector, optionally filtering by source. For testing.
 
     Args:
@@ -99,6 +114,6 @@ def search_dense(client: QdrantClient, collection: str, query_vec: list[float], 
         limit=top_k,
         with_payload=True,
         with_vectors=False,
-        query_filter=flt
+        query_filter=flt,
     )
     return hits

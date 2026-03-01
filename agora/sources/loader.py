@@ -1,16 +1,17 @@
 from __future__ import annotations
+
 from pathlib import Path
-from typing import Dict, Annotated, Union, Any
+from typing import Annotated, Any
 
 import yaml
 from pydantic import BaseModel, Field
 
-from .models.base import SourcesConfig as _RawSourcesConfig, SourceDefaults
+from .models.base import SourceDefaults
+from .models.base import SourcesConfig as _RawSourcesConfig
 from .models.markdown_repo import MarkdownRepoConfig
 
-
 SourceConfigUnion = Annotated[
-    Union[MarkdownRepoConfig],  # extend here with future kinds
+    MarkdownRepoConfig,  # extend here with future kinds
     Field(discriminator="kind"),
 ]
 
@@ -18,7 +19,7 @@ SourceConfigUnion = Annotated[
 class SourcesConfig(BaseModel):
     version: int = 1
     defaults: SourceDefaults
-    sources: Dict[str, SourceConfigUnion]
+    sources: dict[str, SourceConfigUnion]
 
 
 def load_sources_config(path: Path) -> SourcesConfig:
@@ -33,7 +34,7 @@ def load_sources_config(path: Path) -> SourcesConfig:
 
     # --- PRE-NORMALIZE relative paths against the YAML file location ---
     base_dir = path.parent
-    norm_sources: Dict[str, dict] = {}
+    norm_sources: dict[str, dict] = {}
     for name, cfg in (raw.sources or {}).items():
         cfg = dict(cfg)  # shallow copy
         if cfg.get("kind") == "markdown_repo":
@@ -44,11 +45,13 @@ def load_sources_config(path: Path) -> SourcesConfig:
                     cfg["repo_path"] = str((base_dir / rp_path).resolve())
         norm_sources[name] = cfg
 
-    typed = SourcesConfig.model_validate({
-        "version": raw.version,
-        "defaults": raw.defaults.model_dump(),
-        "sources": norm_sources,
-    })
+    typed = SourcesConfig.model_validate(
+        {
+            "version": raw.version,
+            "defaults": raw.defaults.model_dump(),
+            "sources": norm_sources,
+        }
+    )
     return typed
 
 
@@ -69,8 +72,9 @@ def _merge_defaults(cfg: BaseModel, defaults: BaseModel) -> BaseModel:
     return cfg.model_copy(update=update)
 
 
-def resolve_source(name: str, cfg: SourceConfigUnion,
-                   defaults: SourceDefaults) -> SourceConfigUnion:
+def resolve_source(
+    name: str, cfg: SourceConfigUnion, defaults: SourceDefaults
+) -> SourceConfigUnion:
     # Apply generic default merge (works for any BaseModel kind)
     cfg = _merge_defaults(cfg, defaults)
 
@@ -81,9 +85,9 @@ def resolve_source(name: str, cfg: SourceConfigUnion,
     raise ValueError(f"Unsupported source kind for '{name}': {getattr(cfg, 'kind', '?')}")
 
 
-def validate_and_resolve(path: Path) -> Dict[str, SourceConfigUnion]:
+def validate_and_resolve(path: Path) -> dict[str, SourceConfigUnion]:
     sc = load_sources_config(path)
-    resolved: Dict[str, SourceConfigUnion] = {}
+    resolved: dict[str, SourceConfigUnion] = {}
     for name, cfg in sc.sources.items():
         cfg = resolve_source(name, cfg, sc.defaults)
         resolved[name] = cfg

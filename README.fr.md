@@ -1,105 +1,171 @@
-# RAGnaR
-
 [🇫🇷 Français](README.fr.md) | [🇬🇧 English](README.md)
 
-**RAGnaR** est une pipeline d’ingestion de documents pour la **Génération augmentée par la recherche (RAG)**. Il embarque une CLI pour :
+# AgoRa
 
-- Configurer **quels documents ingérer** (sources, chemins, filtres)
-- Contrôler **comment découper** les documents (taille/chevauchement/maximum de tokens)
-- **Encoder** les documents découpés via un modèle d'embeddings compatible OpenAI
-- **Stocker** les vecteurs issus de l'embeddings et les méta-données dans **Qdrant**
+**AgoRa** est une pipeline d’ingestion documentaire pour la **Retrieval-Augmented Generation (RAG)**.
 
-RAGnaR a été conçu pour ingérer efficacement de la **documentation technique** et gère particulièrement bien les blocs de code. Il est efficace pour augmenter un LLM avec de la documentations interne sur les recommandations et bonnes pratiques de code.
+Elle fournit des outils en ligne de commande pour :
 
-Vous pouvez associer RagnaR à [CanaR](https://github.com/Romanovytch/canar), une interface de chat qui interroge Qdrant pour fournir des réponses adaptées avec citations des ressources utilisées.
+- 🧩 Configurer **quoi ingérer** (sources, chemins, filtres)
+- ✂️ Contrôler **comment découper** les documents (cible / chevauchement / max tokens)
+- 🔤 **Vectoriser (embeddings)** les chunks via un **endpoint compatible OpenAI**
+- 📦 **Stocker** les vecteurs + le payload dans **Qdrant**
+
+À associer avec **[CanaR](https://github.com/Romanovytch/canar)** :duck: , une interface qui permet de créer des chatbots qui interrogent Qdrant pour fournir des réponses basées sur les documents en citant les sources.
+
+AgoRa est conçue pour être exécutée en **CLI** afin que l’ingestion puisse être automatisée : par exemple, déclencher un job d’ingestion lorsqu’un repo/site change (pipeline CI, cron, Job Kubernetes) pour **remplacer** ou **insérer dans** une collection Qdrant.
+
+> :construction: AgoRa est actuellement en 0.x et ne prend en charge que les fichiers Markdown *(la plupart des “books” en ligne sont en réalité du Markdown)*.
+> En attendant la prise en charge du PDF/HTML/DOCX en 1.0, nous recommandons de convertir les documents en Markdown (par exemple avec un convertisseur en ligne ou via une IA générative) avant ingestion.
+
+---
+
+## Écosystème (AgoRa + CanaR)
+
+- **AgoRa** : ingestion (sources → chunking → embeddings → payload Qdrant)
+- **CanaR** : UI de chat + assistants + retrieval + citations + historique de conversation
+
+Si tu cherches par où commencer (guide d'installation, workflow de contribution, templates), commence plutôt par le dépôt de **CanaR** qui est le point d'entrée officiel de l'écosystème AgoRa-CanaR :
+- Repo : https://github.com/Romanovytch/canar/README.fr.md
+- Contribution : https://github.com/Romanovytch/canar/blob/main/CONTRIBUTING.fr.md
+
+Le dépôt de CanaR fournit aussi un **docker compose** pour déployer rapidement l'instance Qdrant requise pour AgoRa.
+
+> :warning: Il n'est pas indispensable d'utiliser AgoRa avec CanaR (ni l'inverse). Les deux peuvent être compatibles avec d'autres produits si vous avez déjà un outil d'ingestion ou une UI chatbot à votre disposition.
+
+---
+
+## Contrat de payload d’ingestion
+
+AgoRa écrit des points dans Qdrant avec un **schéma de payload stable**, consommé par CanaR.
+
+**Ce contrat est une surface de compatibilité centrale.** Toute modification des clés du payload doit être considérée comme une rupture (*breaking change*) et doit être coordonnée avec CanaR.
+
+Le payload contient (au minimum) :
+
+- `source` (identifiant de la source, par ex. nom du document)
+- `doc_id` (identifiant stable du document)
+- `path` (chemin relatif dans le dépôt / la source)
+- `url` (URL de citation si pertinent, construite à partir de `base_url` + ancres/breadcrumbs si possible)
+- `breadcrumbs` (hiérarchie chapitre/section)
+- `content` (texte du chunk)
+- `token_count` (ou équivalent, selon le tokenizer)
+- `chunk_id`, `chunk_index` (stables à l'intérieur d'un document)
+- optionnel : `repo_url` (lien vers le fichier à un commit donné), métadonnées de langue, etc.
+
+> Le schéma exact devrait vivre prochainement dans un fichier dédié (par ex. `docs/payload-contract.md`) et être couvert par des golden tests.
+
+---
 
 ## Fonctionnalités
 
-- 🧩 **Documents renseignés par fichier de configuration** via `sources.yaml`
-- ✂️ **Chunker (découpeur) sensible aux blocs de code** pour Markdown/Quarto (pas de découpe au milieu des blocs de code)
-- 🔤 **Embeddings distants** compatibles avec les endpoints OpenAI (e.g., vLLM)
-- 📦 **Qdrant** comme base vectorielle (cosine)
-- 🧭 **Méta-données riches** : fil d’Ariane, chapitre/section, nombre de tokens, URLs
-- ✅ **Validation** des configs avec erreurs explicites
+- Sources **pilotées par configuration** via `sources.yaml`
+- **Chunker intelligent**
+- **Embeddings** distants compatibles OpenAI (ex : endpoint API, vLLM)
+- Base vectorielle **Qdrant**
+- Payload riche : breadcrumbs, chapitre/section, comptage de tokens, URLs
+- **Validation** des configs avec des erreurs explicites
 
 ## Prérequis
 
-- **Python** ≥ 3.10
-- Une instance **Qdrant**
-- Un modèle d'**embeddings** (compatible OpenAI /v1)
+- **Python ≥ 3.10**
+- Une instance **Qdrant** en fonctionnement
+- Un endpoint **embeddings** compatible OpenAI, ex. OpenAI `text-embedding-3-large/small`, `bge-multilingual-gemma2` servi via vLLM, etc.
 
-## Installation
+---
 
+## Démarrage rapide (local)
+
+### Makefile (optionnel mais recommandé)
+
+Un `Makefile` minimal est disponible (aligné avec CanaR) :
+
+```text
+Targets:
+  make venv          - Créer un venv (.venv)
+  make install       - Installer AgoRa (editable) + outils dev
+  make test          - Lancer les tests (pytest)
+  make lint          - Lancer ruff lint (check)
+  make format        - Auto-formater avec ruff
+  make format-check  - Vérifier le formatage avec ruff
+  make ci            - Lancer lint + format-check + tests
 ```
-# optionnel mais recommandé : environnement virtuel
+
+### 1) Installation
+
+```shell
+# optionnel mais recommandé : utiliser un virtualenv
 python -m venv .venv
 source .venv/bin/activate
 
-# depuis la racine du dépôt
+# depuis la racine du repo
 pip install -U pip
 pip install -e .
 ```
-Cela installe les binaires : `ragnar-config` et `ragnar-ingest`.
+ou `make venv` & `make install`
 
+Cela installe les binaires : `agora-config` et `agora-ingest`.
 
-## Variables d'environnement
+> Attention à bien charger l'environnement virtuel pour utiliser les binaires via `source .venv/bin/activate` puisqu'ils sont installés dans cet environnement.
 
-Vous pouvez renseigner les variables de configuration (URLs de Qdrant et du modèle, clés API...) dans vos **variables d'environnement** ou les écrire dans un fichier `.env` ou les passer  directement via **l'invite de commande `ragnar-ingest`**.
+### 2) Configurer les variables d’environnement
 
-Example `.env`:
+Il est possible de fournir les identifiants/URLs via **flags CLI**, **variables d’environnement**, ou via un fichier **`.env`**.
 
-```
+Exemple de `.env` :
+```dotenv
 # Embeddings
-EMBED_API_BASE="https://my-embeddings-model-url/v1"
-EMBED_API_KEY="api-key"
-EMBED_MODEL="model-name"
+EMBED_API_BASE=https://my-embeddings-model-url/v1
+EMBED_API_KEY=api-key
+EMBED_MODEL=model-name
 
-# Qdrand env vars
-QDRANT_API_KEY="api-key"
-QDRANT_URL="http://qdrant:6333"
+# Qdrant
+QDRANT_API_KEY=api-key
+QDRANT_URL=http://qdrant:6333
 ```
+> La CLI d’ingestion utilise d’abord les args CLI, puis les variables d’env, et peut aussi charger un fichier `.env` via `--dotenv-path` (absolu ou relatif).
 
-> Le fichier `.env` peut être passé en argument de l'invite de commande via `--dotenv-file`.
-
+---
 
 ## Compatibilité des données
 
-Supporté à ce jour :
+Stable aujourd’hui :
+- Markdown : `*.md`
+- R Markdown : `*.Rmd`
+- Quarto : `*.qmd` (y compris les Quarto books)
 
-- Markdown: `*.md`
-- R Markdown: `*.rmd`
-- Quarto: `*.qmd` (inclus les livres quarto)
+À venir (roadmap) :
+- Ingestion HTML (fichiers locaux ou scrap via un URL)
+- Ingestion PDF / DOCX / XLSX
 
-> *Nous prévoyons de supporter l'ingestion de fichiers HTML pour la 1.0 à travers un Chunker et un Loader dédiés.*
-
-Vous devez avoir les documents en local (par exemple, en clonant le projet markdown à côté de RAGnaR):
-
+Pour qu'AgoRa trouve les documents, il faut avoir les docs en local (sauf scrap via un URL), exemple :
 ```shell
 cd ..
 git clone https://github.com/InseeFrLab/utilitR.git
-``` 
-
-## Fichier de configuration (`sources.yaml`)
-
-Initialisez un modèle de fichier de configuration :
-
-```bash
-ragnar-config init
 ```
 
-Cette commande va créer un fichier `sources.yaml` pré-rempli. Éditez la partie `sources:` et ajoutez-y une source. Pour des documents Markdown/Quarto, utilisez `kind: markdown_repo`. 
+---
 
-### Champs de configuration
+## Configurer les sources (`sources.yaml`)
 
-* `kind` **(requis)**: doit être `markdown_repo` pour les fichiers `.md` , `.rmd` ou `.qmd`.
-* `repo_path` **(requis)**: chemin vers le dossier contenant les documents (absolu ou relatif à ce fichier YAML)
-* `base_url` **(requis)**: URL pour reconstruire les liens publiques (permets de citer les sources)
-* `repo_url_template` *(optionnel)*: template pour les liens du repo git, par exemple : https://github.com/org/repo/blob/{commit}/{path}
-* `default_lang` *(optionnel)*: *en* par défaut, *fr* pour les documents français
-* `exclude_dirs`, `include_globs` : dossiers à exclure de la lecture ; dossiers ou fichiers à inclure
+Créer un fichier de départ :
+```shell
+agora-config init
+```
 
-Example de fichier de configuration `sources.yaml` pour l'ingestion d'[utilitR](https://book.utilitr.org/) :
+Cette commande crée un `sources.yaml` pré-configuré. Pour ajouter une source, modifiez la section `sources:` et renseignez les champs listés ci-dessous.
+> Pour des dépôts Markdown/Quarto, utiliser `kind: markdown_repo`.
 
+### Champs d'une source
+
+- `kind` **(requis)** : `markdown_repo` pour les documents `.md`, `.Rmd` ou `.qmd`
+- `repo_path` **(requis)** : chemin vers le dossier contenant les docs (absolu ou relatif à ce YAML)
+- `base_url` **(requis)** : URL publique de base utilisée pour construire les liens de citation
+- `repo_url_template` *(optionnel)* : template pour les liens repo, ex. `https://github.com/org/repo/blob/{commit}/{path}`
+- `default_lang` *(optionnel)* : langue principale si différente de l'anglais par défaut
+- `exclude_dirs`, `include_globs` *(optionnel)*
+
+Exemple de config pour [utilitR](https://book.utilitr.org/) :
 ```yaml
 version: 1
 
@@ -119,81 +185,71 @@ sources:
     exclude_dirs: [".git", "_book", "docs", ".quarto", "renv", ".github"]
 ```
 
-Validez votre fichier de configuration avec `ragnar-config validate` :
-
+Pour valider le contenu du `source.yaml` à tout moment :
+```shell
+agora-config validate --file config/sources.yaml
 ```
-ragnar-config validate --file config/sources.yaml
-```
 
+---
 
 ## Utilisation
 
-Une fois la configuration validée, utilisez la CLI `ragnar-ingest` pour ingérer les documents dans Qdrant :
-
+Une fois la config validée, pour ingérer une source dans Qdrant :
+```shell
+# avec .env, une source unique dans le YAML :
+agora-ingest --sources-config-path config/sources.yaml --collection utilitr_v1 --dotenv-path config/.env
 ```
-# using .env, single source in YAML:
-ragnar-ingest \
-  --sources-config-path config/sources.yaml \
-  --collection utilitr_v1 \
-  --dotenv-file config/.env
-```
+> On suppose ici que l'utilisateur a créé un dossier config/ dans lequel il a placé le `sources.yaml` édité et le `.env` édité.
 
-Vous pouvez aussi tout renseigner explicitement :
-
-```
-ragnar-ingest \
+AgoRa permets aussi de tout passer explicitement par arguments :
+```shell
+agora-ingest \
   --sources-config-path config/sources.yaml \
   --source utilitr \
   --collection utilitr_v1 \
   --embed-api-base https://my-embeddings.example.com/v1 \
+  --embed-api-key sk-**** \
   --embed-model BAAI/bge-multilingual-gemma2 \
   --qdrant-url http://localhost:6333 \
+  --qdrant-api-key ""\
   --drop-collection
 ```
 
-### CLI help (abrégé)
-
+## Aide CLI (extrait)
 ```
-usage: ragnar-ingest [-h]
-                     [--sources-config-path PATH]
-                     [--source NAME]
-                     --collection NAME
-                     [--dotenv-file PATH]
-                     [--embed-api-base URL] [--embed-model ID] [--embed-api-key KEY]
-                     [--qdrant-url URL] [--qdrant-api-key KEY]
-                     [--insecure]
-                     [--target-tokens N] [--overlap-tokens N] [--max-tokens N]
-                     [--batch-size N] [--drop-collection]
+usage: agora-ingest [-h]
+                    [--sources-config-path PATH]
+                    [--source NAME]
+                    --collection NAME
+                    [--dotenv-path PATH]
+                    [--embed-api-base URL] [--embed-model ID] [--embed-api-key KEY]
+                    [--qdrant-url URL] [--qdrant-api-key KEY]
+                    [--insecure]
+                    [--target-tokens N] [--overlap-tokens N] [--max-tokens N]
+                    [--batch-size N] [--drop-collection]
 
 Ingest one source from sources.yaml into Qdrant.
 
 If a required value is missing, the CLI will suggest:
 - passing a CLI flag,
 - setting an env var,
-- or supplying a .env file via --dotenv-file.
+- or supplying a .env file via --dotenv-path.
 ```
 
-Par défaut :
+Valeurs par défaut :
+- `--target-tokens` = `800`
+- `--max-tokens` = `1200`
+- `--overlap-tokens` = `120`
+- `--batch-size` = `64`
 
-* `--target-tokens` = `800`
-* `--max-tokens` = `1200`
-* `--overlap-tokens` = `120`
-* `--batch-size` = `64`
-
-## Roadmap
-
-- Implémenter le BM25 / Hybride pour les documents marqués `technical` (techniques) pour améliorer la qualité de la recherche
-- Ingestion de sites/fichiers HTML (par exemple la doc pkgdown) en ajoutant un HtmlChunker
-- Tester la qualité du découpage avant l'ingestion avec une CLI dédiée `ragnar-analyze` qui avertie/conseille l'utilisateur pour changer la configuration du Chunker.
-- Métriques sur les modèles d'embeddings / tokens / logs (MLflow)
-- Support du multi-sources en un seul fichier `sources.yaml`
+---
 
 ## Contribuer
 
-Les issues et les PR sont les bienvenues ! Merci d'ouvrir une issue pour discuter des changements avant de soumettre une PR. (Un CONTRIBUTING.md complet arrive bientôt)
+Ce dépôt fait partie de l'écosystème `AgoRa + CanaR`.
+- Pour les règles globales de contribution, consultez le guide contributeur ici : https://github.com/Romanovytch/canar/blob/main/CONTRIBUTING.fr.md
+- Les tickets et PR spécifiques à l'ingestion (sources, chunkers, parseurs, contrat payload) sont les bienvenues ici.
 
+## Licence
 
-## License
-
-TBD (to be confirmed by maintainers).
-@ Insee
+TBD (à confirmer par les mainteneurs)
