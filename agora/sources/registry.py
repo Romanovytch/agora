@@ -1,18 +1,21 @@
 from __future__ import annotations
-from typing import Callable, Dict, Any
-from ragnar.sources.models.markdown_repo import MarkdownRepoConfig
-from ragnar.sources.markdown_source import MarkdownRepoSource
+
+from collections.abc import Callable
+from typing import Any
+
+from agora.sources.markdown_source import MarkdownRepoSource
+from agora.sources.models.markdown_repo import MarkdownRepoConfig
 
 # name + typed cfg -> Source instance
 SourceFactory = Callable[[str, Any], Any]
-_REGISTRY: Dict[str, SourceFactory] = {}
+_REGISTRY: dict[str, SourceFactory] = {}
 
 
 def register(kind: str, factory: SourceFactory) -> None:
     _REGISTRY[kind] = factory
 
 
-def get_registry() -> Dict[str, SourceFactory]:
+def get_registry() -> dict[str, SourceFactory]:
     return dict(_REGISTRY)
 
 
@@ -24,6 +27,7 @@ def build_source(name: str, cfg: Any):
 
 
 # --- built-in kinds ---
+
 
 def _mk_markdown_repo(name: str, cfg: MarkdownRepoConfig):
     return MarkdownRepoSource(

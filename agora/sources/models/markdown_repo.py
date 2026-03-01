@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import Literal
+
 from pydantic import BaseModel, field_validator, model_validator
 
 
@@ -23,18 +25,19 @@ class MarkdownRepoConfig(BaseModel):
         frontmatter_title_keys: override the keys to look for title
         frontmatter_lang_keys: override the keys to look for language
     """
+
     kind: Literal["markdown_repo"]
     repo_path: Path
     base_url: str
 
-    include_globs: Optional[List[str]] = None
-    exclude_dirs: Optional[List[str]] = None
-    default_lang: Optional[str] = None
+    include_globs: list[str] | None = None
+    exclude_dirs: list[str] | None = None
+    default_lang: str | None = None
 
-    repo_url_template: Optional[str] = None
-    html_path_template: Optional[str] = "{path_no_ext}.html"
-    frontmatter_title_keys: Optional[List[str]] = None
-    frontmatter_lang_keys: Optional[List[str]] = None
+    repo_url_template: str | None = None
+    html_path_template: str | None = "{path_no_ext}.html"
+    frontmatter_title_keys: list[str] | None = None
+    frontmatter_lang_keys: list[str] | None = None
 
     @field_validator("repo_path")
     @classmethod

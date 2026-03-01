@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 from pathlib import Path
-from ragnar.sources.models.markdown_repo import MarkdownRepoConfig
-from ragnar.sources.registry import build_source
+
+from agora.sources.models.markdown_repo import MarkdownRepoConfig
+from agora.sources.registry import build_source
 
 
 def test_registry_builds_markdown_repo(tmp_path: Path):

@@ -1,23 +1,25 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import List, Tuple, Optional
+
 from markdown_it import MarkdownIt
-from ragnar.util import count_tokens
+
+from agora.util import count_tokens
 
 
 @dataclass
 class Unit:
-    kind: str                               # "para" | "code"
+    kind: str  # "para" | "code"
     text: str
-    lang: Optional[str]
-    heading_path: List[Tuple[int, str]]     # breadcrumbs
+    lang: str | None
+    heading_path: list[tuple[int, str]]  # breadcrumbs
 
 
 @dataclass
 class Chunk:
     id: str
     text: str
-    metadata: dict                          # titles, chapters, token_count...
+    metadata: dict  # titles, chapters, token_count...
 
 
 class MarkdownChunker:
@@ -32,14 +34,15 @@ class MarkdownChunker:
         max_tokens: Hard ceiling for a chunk size (tokens).
     """
 
-    def __init__(self, target_tokens: int = 800, overlap_tokens: int = 120,
-                 max_tokens: int = 1200) -> None:
+    def __init__(
+        self, target_tokens: int = 800, overlap_tokens: int = 120, max_tokens: int = 1200
+    ) -> None:
         self.target = target_tokens
-        self.overlap = overlap_tokens   # paragraph-only
+        self.overlap = overlap_tokens  # paragraph-only
         self.max_tokens = max_tokens
         self.md = MarkdownIt("commonmark").enable("table").enable("strikethrough")
 
-    def parse_units(self, text: str) -> List[Unit]:
+    def parse_units(self, text: str) -> list[Unit]:
         """Parse Markdown into atomic units (paragraphs and fenced code).
 
         The parser walks the Markdown-It token stream, producing `Unit` objects:
@@ -62,16 +65,22 @@ class MarkdownChunker:
             is taken from the fence info string.
         """
         tokens = self.md.parse(text)
-        units: List[Unit] = []
-        heading_stack: List[Tuple[int, str]] = []
-        buffer_lines: List[str] = []
+        units: list[Unit] = []
+        heading_stack: list[tuple[int, str]] = []
+        buffer_lines: list[str] = []
 
         def flush_para():
             if buffer_lines:
                 para_text = "\n".join(buffer_lines).strip()
                 if para_text:
-                    units.append(Unit(kind="para", text=para_text,
-                                      lang=None, heading_path=heading_stack.copy()))
+                    units.append(
+                        Unit(
+                            kind="para",
+                            text=para_text,
+                            lang=None,
+                            heading_path=heading_stack.copy(),
+                        )
+                    )
                 buffer_lines.clear()
 
         i = 0
@@ -97,15 +106,16 @@ class MarkdownChunker:
                 lang = (t.info or "").strip() or None
                 code = t.content.rstrip("\n")
                 fenced = f"```{lang or ''}\n{code}\n```"
-                units.append(Unit(kind="code", text=fenced,
-                                  lang=lang, heading_path=heading_stack.copy()))
+                units.append(
+                    Unit(kind="code", text=fenced, lang=lang, heading_path=heading_stack.copy())
+                )
                 i += 1
                 continue
 
             # Handle paragraphs
             if t.type == "paragraph_open":
                 j = i + 1
-                lines: List[str] = []
+                lines: list[str] = []
                 while j < len(tokens) and tokens[j].type != "paragraph_close":
                     if tokens[j].type == "inline":
                         lines.append(tokens[j].content)
@@ -121,7 +131,7 @@ class MarkdownChunker:
             if t.type in {"bullet_list_open", "ordered_list_open", "blockquote_open", "table_open"}:
                 depth = 1
                 j = i + 1
-                lines: List[str] = []
+                lines: list[str] = []
                 while j < len(tokens) and depth > 0:
                     if tokens[j].type.endswith("_open"):
                         depth += 1
@@ -133,8 +143,9 @@ class MarkdownChunker:
                 flush_para()
                 para = "\n".join(lines).strip()
                 if para:
-                    units.append(Unit(kind="para", text=para,
-                                      lang=None, heading_path=heading_stack.copy()))
+                    units.append(
+                        Unit(kind="para", text=para, lang=None, heading_path=heading_stack.copy())
+                    )
                 i = j
                 continue
 
@@ -143,7 +154,7 @@ class MarkdownChunker:
         flush_para()
         return units
 
-    def chunk(self, units: List[Unit]) -> List[tuple[str, List[tuple[int, str]]]]:
+    def chunk(self, units: list[Unit]) -> list[tuple[str, list[tuple[int, str]]]]:
         """Pack units into chunks with soft/hard token budgets and paragraph-only overlap.
 
         Chunks are built greedily from `Unit`s (paragraphs and code fences). We never
@@ -165,9 +176,9 @@ class MarkdownChunker:
         Returns:
             A list of `(chunk_text, heading_path)` pairs in order.
         """
-        chunks: List[tuple[str, List[tuple[int, str]]]] = []
-        buf: List[str] = []
-        buf_units: List[Unit] = []
+        chunks: list[tuple[str, list[tuple[int, str]]]] = []
+        buf: list[str] = []
+        buf_units: list[Unit] = []
         buf_tokens = 0
         last_para_for_overlap: str | None = None
 
@@ -194,8 +205,14 @@ class MarkdownChunker:
                     ov = count_tokens(last_para_for_overlap)
                     if ov <= self.overlap:
                         buf.append(last_para_for_overlap)
-                        buf_units.append(Unit(kind="para", text=last_para_for_overlap,
-                                              lang=None, heading_path=u.heading_path))
+                        buf_units.append(
+                            Unit(
+                                kind="para",
+                                text=last_para_for_overlap,
+                                lang=None,
+                                heading_path=u.heading_path,
+                            )
+                        )
                         buf_tokens += ov
                 buf.append(u.text)
                 buf_units.append(u)
@@ -208,8 +225,14 @@ class MarkdownChunker:
                     ov = count_tokens(last_para_for_overlap)
                     if ov <= self.overlap:
                         buf.append(last_para_for_overlap)
-                        buf_units.append(Unit(kind="para", text=last_para_for_overlap,
-                                              lang=None, heading_path=u.heading_path))
+                        buf_units.append(
+                            Unit(
+                                kind="para",
+                                text=last_para_for_overlap,
+                                lang=None,
+                                heading_path=u.heading_path,
+                            )
+                        )
                         buf_tokens += ov
                 buf.append(u.text)
                 buf_units.append(u)
@@ -222,8 +245,14 @@ class MarkdownChunker:
                     ov = count_tokens(last_para_for_overlap)
                     if ov <= self.overlap:
                         buf.append(last_para_for_overlap)
-                        buf_units.append(Unit(kind="para", text=last_para_for_overlap,
-                                              lang=None, heading_path=u.heading_path))
+                        buf_units.append(
+                            Unit(
+                                kind="para",
+                                text=last_para_for_overlap,
+                                lang=None,
+                                heading_path=u.heading_path,
+                            )
+                        )
                         buf_tokens += ov
                 buf.append(u.text)
                 buf_units.append(u)

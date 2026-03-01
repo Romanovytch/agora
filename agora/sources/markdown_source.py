@@ -1,11 +1,11 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Dict, Iterable, List, Optional
 
 import re
+from collections.abc import Iterable
+from dataclasses import dataclass
+from pathlib import Path
 
-from ragnar.util import read_text, extract_frontmatter, git_head_commit
+from agora.util import extract_frontmatter, git_head_commit, read_text
 
 
 @dataclass
@@ -16,8 +16,9 @@ class DocRecord:
         text: Plain markdown body (frontmatter removed).
         metadata: Provenance & citation fields suitable for payload storage.
     """
+
     text: str
-    metadata: Dict[str, object]
+    metadata: dict[str, object]
 
 
 class MarkdownRepoSource:
@@ -87,14 +88,14 @@ class MarkdownRepoSource:
         self,
         name: str,
         repo_path: Path,
-        include_globs: List[str],
-        exclude_dirs: List[str],
+        include_globs: list[str],
+        exclude_dirs: list[str],
         base_url: str,
         html_path_template: str = "{path_no_ext}.html",
-        repo_url_template: Optional[str] = None,
+        repo_url_template: str | None = None,
         default_lang: str = "en",
-        frontmatter_title_keys: Optional[List[str]] = None,
-        frontmatter_lang_keys: Optional[List[str]] = None,
+        frontmatter_title_keys: list[str] | None = None,
+        frontmatter_lang_keys: list[str] | None = None,
         default_branch: str = "main",
         emit_repo_url: bool = True,
         follow_symlinks: bool = False,
@@ -115,11 +116,11 @@ class MarkdownRepoSource:
 
         self.commit = git_head_commit(self.repo_path)
 
-    def _iter_files(self) -> List[Path]:
-        files: List[Path] = []
+    def _iter_files(self) -> list[Path]:
+        files: list[Path] = []
         for pat in self.include_globs:
             files.extend(self.repo_path.glob(pat))
-        out: List[Path] = []
+        out: list[Path] = []
         for p in sorted(set(files)):
             if not p.is_file():
                 continue
@@ -139,7 +140,7 @@ class MarkdownRepoSource:
             out.append(p)
         return out
 
-    def _infer_title(self, fm: Dict[str, object], body: str, stem: str) -> str:
+    def _infer_title(self, fm: dict[str, object], body: str, stem: str) -> str:
         # 1) frontmatter keys
         for k in self.frontmatter_title_keys:
             v = fm.get(k)
@@ -152,7 +153,7 @@ class MarkdownRepoSource:
         # 3) fallback to filename stem
         return stem
 
-    def _infer_lang(self, fm: Dict[str, object], default: str) -> str:
+    def _infer_lang(self, fm: dict[str, object], default: str) -> str:
         for k in self.frontmatter_lang_keys:
             v = fm.get(k)
             if isinstance(v, str) and v.strip():
@@ -171,9 +172,7 @@ class MarkdownRepoSource:
         }
         return self.base_url + self.html_path_template.format(**mapping).lstrip("/")
 
-    def _build_repo_url(
-        self, rel_posix: str, branch: str, commit: Optional[str]
-    ) -> Optional[str]:
+    def _build_repo_url(self, rel_posix: str, branch: str, commit: str | None) -> str | None:
         if not (self.emit_repo_url and self.repo_url_template):
             return None
         path_no_ext = rel_posix.rsplit(".", 1)[0]

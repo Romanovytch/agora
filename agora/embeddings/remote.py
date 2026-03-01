@@ -1,7 +1,7 @@
 from __future__ import annotations
-import requests
+
 import numpy as np
-from typing import List, Optional
+import requests
 
 
 class RemoteOpenAIEncoder:
@@ -27,8 +27,15 @@ class RemoteOpenAIEncoder:
         Uses a persistent :class:`requests.Session` for connection pooling.
     """
 
-    def __init__(self, api_base: str, model: str, api_key: str = "", timeout: float = 60.0,
-                 ca_bundle: Optional[str] = None, insecure: bool = False) -> None:
+    def __init__(
+        self,
+        api_base: str,
+        model: str,
+        api_key: str = "",
+        timeout: float = 60.0,
+        ca_bundle: str | None = None,
+        insecure: bool = False,
+    ) -> None:
         if not api_base or not api_base.startswith(("http://", "https://")):
             raise ValueError("api_base must start with http(s)://")
         self.url = api_base.rstrip("/") + "/embeddings"
@@ -58,7 +65,7 @@ class RemoteOpenAIEncoder:
             self._dim = int(v.shape[1])
         return self._dim
 
-    def encode(self, texts: List[str], batch_size: int = 64) -> np.ndarray:
+    def encode(self, texts: list[str], batch_size: int = 64) -> np.ndarray:
         """Embed a list of strings and return L2-normalized vectors.
 
         Batches the input to reduce request size, performs POST requests to
@@ -87,14 +94,15 @@ class RemoteOpenAIEncoder:
 
         out = []
         for i in range(0, len(texts), batch_size):
-            payload = {"model": self.model, "input": texts[i:i+batch_size]}
-            r = self._session.post(self.url, json=payload, headers=headers,
-                                   timeout=self.timeout, verify=self.verify)
+            payload = {"model": self.model, "input": texts[i : i + batch_size]}
+            r = self._session.post(
+                self.url, json=payload, headers=headers, timeout=self.timeout, verify=self.verify
+            )
             if r.status_code != 200:
                 raise RuntimeError(f"Embeddings API {r.status_code}: {r.text[:500]}")
             data = r.json().get("data") or []
             out.extend([d["embedding"] for d in data])
 
         arr = np.array(out, dtype="float32")
-        arr /= (np.linalg.norm(arr, axis=1, keepdims=True) + 1e-12)
+        arr /= np.linalg.norm(arr, axis=1, keepdims=True) + 1e-12
         return arr
