@@ -37,10 +37,7 @@ def build_chat_provider_kwargs(
     fallback_provider_name: str | None = None,
 ) -> dict[str, object]:
     """Return Ollama-only extensions for an OpenAI-compatible chat request."""
-    if (
-        detect_llm_provider(api_base, fallback_provider_name) != "ollama"
-        or not reasoning_effort
-    ):
+    if detect_llm_provider(api_base, fallback_provider_name) != "ollama" or not reasoning_effort:
         return {}
     return {"extra_body": {"reasoning_effort": reasoning_effort}}
 

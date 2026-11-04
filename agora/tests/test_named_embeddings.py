@@ -81,9 +81,7 @@ def test_fastembed_late_interaction_encoder_converts_passage_embeddings(monkeypa
     )
     monkeypatch.setitem(sys.modules, "fastembed", fake_fastembed)
 
-    encoder = FastEmbedLateInteractionEncoder(
-        model_name="answerdotai/answerai-colbert-small-v1"
-    )
+    encoder = FastEmbedLateInteractionEncoder(model_name="answerdotai/answerai-colbert-small-v1")
     vectors = encoder.encode(["alpha beta", "gamma"], batch_size=7)
 
     assert _FakeLateInteractionTextEmbedding.init_kwargs == {
@@ -116,9 +114,7 @@ def test_sparse_vector_language_overrides_source_default_lang(monkeypatch):
     monkeypatch.setitem(sys.modules, "fastembed", fake_fastembed)
 
     ConfiguredNamedVectorEncoder(
-        config=VectorIndexConfig(
-            vectors=[SparseVectorConfig(name="sparse", language="spanish")]
-        ),
+        config=VectorIndexConfig(vectors=[SparseVectorConfig(name="sparse", language="spanish")]),
         api_base="http://emb/v1",
         model="dense-model",
         default_lang="fr",

@@ -568,8 +568,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"[ok] Ingested {len(parent_chunks)} parent chunks into '{parent_collection}'")
     if summary_chunks:
         print(
-            f"[ok] Ingested {len(summary_chunks)} synthetic summaries "
-            f"into '{summary_collection}'"
+            f"[ok] Ingested {len(summary_chunks)} synthetic summaries into '{summary_collection}'"
         )
 
 

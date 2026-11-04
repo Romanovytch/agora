@@ -40,9 +40,7 @@ VectorModeConfig = Annotated[
 
 
 class VectorIndexConfig(BaseModel):
-    vectors: list[VectorModeConfig] = Field(
-        default_factory=lambda: [DenseVectorConfig()]
-    )
+    vectors: list[VectorModeConfig] = Field(default_factory=lambda: [DenseVectorConfig()])
 
     @model_validator(mode="after")
     def _check_unique_names(self):

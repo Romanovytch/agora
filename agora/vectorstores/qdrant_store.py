@@ -71,9 +71,7 @@ def ensure_collection(
                 vectors_config[vector.name] = VectorParams(
                     size=dimensions[vector.name],
                     distance=_distance(vector.distance),
-                    multivector_config=MultiVectorConfig(
-                        comparator=MultiVectorComparator.MAX_SIM
-                    ),
+                    multivector_config=MultiVectorConfig(comparator=MultiVectorComparator.MAX_SIM),
                 )
 
         kwargs = {
