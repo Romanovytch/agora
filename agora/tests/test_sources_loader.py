@@ -7,7 +7,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from agora.sources.loader import validate_and_resolve
+from agora.sources.loader import load_sources_config, validate_and_resolve
+from agora.sources.models.base import (
+    DenseVectorConfig,
+    MultiVectorConfig,
+    SparseVectorConfig,
+)
 from agora.sources.models.markdown_repo import MarkdownRepoConfig
 
 
@@ -207,3 +212,169 @@ def test_multiple_sources_resolve_independently(tmp_path: Path):
     assert one.default_lang == "fr"  # source override
     assert two.include_globs == ["**/*.qmd"]  # source override
     assert one.base_url.endswith("/") and two.base_url.endswith("/")  # normalized
+
+
+def test_markdown_source_synthetic_llm_summary_flag_is_optional(tmp_path: Path):
+    repo1 = tmp_path / "missing_flag"
+    repo1.mkdir()
+    repo2 = tmp_path / "enabled"
+    repo2.mkdir()
+    repo3 = tmp_path / "disabled"
+    repo3.mkdir()
+    cfg = tmp_path / "sources.yaml"
+    _write_yaml(
+        cfg,
+        f"""
+        version: 1
+        sources:
+          missing_flag:
+            kind: markdown_repo
+            repo_path: "{repo1}"
+            base_url: "https://missing.example.org"
+          enabled:
+            kind: markdown_repo
+            repo_path: "{repo2}"
+            base_url: "https://enabled.example.org"
+            synthetic_llm_summary: True
+            synthetic_llm_summary_group_max_tokens: 4000
+            synthetic_llm_summary_max_sentences: 2
+          disabled:
+            kind: markdown_repo
+            repo_path: "{repo3}"
+            base_url: "https://disabled.example.org"
+            synthetic_llm_summary: False
+        """,
+    )
+
+    resolved = validate_and_resolve(cfg)
+
+    assert resolved["missing_flag"].synthetic_llm_summary is False
+    assert resolved["enabled"].synthetic_llm_summary is True
+    assert resolved["enabled"].synthetic_llm_summary_group_max_tokens == 4000
+    assert resolved["enabled"].synthetic_llm_summary_max_sentences == 2
+    assert resolved["disabled"].synthetic_llm_summary is False
+    assert resolved["disabled"].parent_storage_mode == "none"
+
+
+def test_vector_index_defaults_to_named_dense(tmp_path: Path):
+    repo = tmp_path / "r"
+    repo.mkdir()
+    cfg = tmp_path / "sources.yaml"
+    _write_yaml(
+        cfg,
+        f"""
+        version: 1
+        sources:
+          s:
+            kind: markdown_repo
+            repo_path: "{repo}"
+            base_url: "https://docs.example.org"
+        """,
+    )
+
+    loaded = load_sources_config(cfg)
+
+    assert len(loaded.vector_index.vectors) == 1
+    dense = loaded.vector_index.vectors[0]
+    assert isinstance(dense, DenseVectorConfig)
+    assert dense.name == "dense"
+
+
+def test_vector_index_validates_hybrid_modes(tmp_path: Path):
+    repo = tmp_path / "r"
+    repo.mkdir()
+    cfg = tmp_path / "sources.yaml"
+    _write_yaml(
+        cfg,
+        f"""
+        version: 1
+        vector_index:
+          vectors:
+            - name: dense
+              kind: dense
+              size: 3
+            - name: sparse
+              kind: sparse
+            - name: multi
+              kind: multi
+              size: 2
+        sources:
+          s:
+            kind: markdown_repo
+            repo_path: "{repo}"
+            base_url: "https://docs.example.org"
+        """,
+    )
+
+    loaded = load_sources_config(cfg)
+
+    dense, sparse, multi = loaded.vector_index.vectors
+    assert isinstance(dense, DenseVectorConfig)
+    assert isinstance(sparse, SparseVectorConfig)
+    assert isinstance(multi, MultiVectorConfig)
+    assert dense.size == 3
+    assert sparse.provider == "fastembed"
+    assert sparse.model == "Qdrant/bm25"
+    assert sparse.modifier == "idf"
+    assert sparse.language is None
+    assert multi.provider == "fastembed"
+    assert multi.model == "answerdotai/answerai-colbert-small-v1"
+    assert multi.size == 2
+
+
+def test_vector_index_multi_defaults_to_fastembed_late_interaction(tmp_path: Path):
+    repo = tmp_path / "r"
+    repo.mkdir()
+    cfg = tmp_path / "sources.yaml"
+    _write_yaml(
+        cfg,
+        f"""
+        version: 1
+        vector_index:
+          vectors:
+            - name: multi
+              kind: multi
+        sources:
+          s:
+            kind: markdown_repo
+            repo_path: "{repo}"
+            base_url: "https://docs.example.org"
+        """,
+    )
+
+    loaded = load_sources_config(cfg)
+
+    multi = loaded.vector_index.vectors[0]
+    assert isinstance(multi, MultiVectorConfig)
+    assert multi.provider == "fastembed"
+    assert multi.model == "answerdotai/answerai-colbert-small-v1"
+    assert multi.size is None
+
+
+def test_markdown_source_accepts_classic_parent_storage_config(tmp_path: Path):
+    repo = tmp_path / "r"
+    repo.mkdir()
+    cfg = tmp_path / "sources.yaml"
+    _write_yaml(
+        cfg,
+        f"""
+        version: 1
+        sources:
+          s:
+            kind: markdown_repo
+            repo_path: "{repo}"
+            base_url: "https://docs.example.org"
+            parent_storage_mode: classic
+            parent_target_tokens: 900
+            parent_overlap_tokens: 80
+            parent_max_tokens: 1200
+        """,
+    )
+
+    resolved = validate_and_resolve(cfg)
+    s = resolved["s"]
+
+    assert s.parent_storage_mode == "classic"
+    assert s.parent_target_tokens == 900
+    assert s.parent_overlap_tokens == 80
+    assert s.parent_max_tokens == 1200

@@ -8,12 +8,25 @@ from dotenv import load_dotenv
 from qdrant_client import QdrantClient
 from tqdm import tqdm
 
-from agora.chunking import Chunk, MarkdownChunker
-from agora.embeddings.remote import RemoteOpenAIEncoder
-from agora.sources.loader import validate_and_resolve
+from agora.chunking import Chunk, ChunkSpan, MarkdownChunker, Unit
+from agora.embeddings.named import ConfiguredNamedVectorEncoder
+from agora.llm import ChatClient
+from agora.sources.loader import load_sources_config, resolve_sources_config
 from agora.sources.registry import build_source
-from agora.util import count_tokens, make_chunk_id, slugify
-from agora.vectorstores.qdrant_store import ensure_collection_dense, upsert_dense
+from agora.summary import (
+    build_summary_chunks,
+    build_summary_embedding_text,
+    generate_summary,
+    group_chunks_for_summary,
+)
+from agora.util import count_tokens, make_chunk_id, make_parent_chunk_id, slugify
+from agora.vectorstores.qdrant_store import (
+    ensure_collection,
+    ensure_payload_collection,
+    upsert_named,
+    upsert_payload_points,
+    validate_named_vectors,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,6 +49,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--qdrant-api-key", help="Qdrant API key (optional)")
     p.add_argument("--drop-collection", action="store_true", help="Drop & recreate the collection")
     p.add_argument("--batch-size", type=int, default=64, help="Embedding batch size")
+    p.add_argument(
+        "--qdrant-batch-size",
+        type=int,
+        default=16,
+        help="Qdrant point upload batch size",
+    )
     p.add_argument("--dotenv-path", help="Path to a .env file to load before resolving env vars")
 
     # Embeddings (remote OpenAI-compatible)
@@ -46,10 +65,41 @@ def build_parser() -> argparse.ArgumentParser:
         "--insecure", action="store_true", help="Skip TLS verify for embeddings (dev only)"
     )
 
+    # Optional LLM summary strategy (OpenAI-compatible chat completions)
+    p.add_argument("--llm-api-base", help="LLM API base, e.g. https://vllm.example/v1")
+    p.add_argument("--llm-model", help="LLM model id for synthetic summaries")
+    p.add_argument("--llm-api-key", default="", help="LLM API key (optional)")
+    p.add_argument(
+        "--llm-provider-name",
+        help="Provider fallback when the LLM API base is not recognized",
+    )
+    p.add_argument(
+        "--llm-timeout",
+        type=float,
+        default=60.0,
+        help="Timeout in seconds for one summary request (default: 60)",
+    )
+    p.add_argument(
+        "--llm-max-output-tokens",
+        type=int,
+        default=512,
+        help="Maximum tokens generated for one summary (default: 512)",
+    )
+
     # Chunking knobs (can later be driven by YAML policy)
     p.add_argument("--target-tokens", type=int, default=800)
     p.add_argument("--overlap-tokens", type=int, default=120)
     p.add_argument("--max-tokens", type=int, default=1200)
+    p.add_argument(
+        "--split-heading-level",
+        type=int,
+        choices=range(1, 7),
+        metavar="{1..6}",
+        help=(
+            "Exact Markdown heading level that defines section chunk boundaries. "
+            "If omitted, any heading path change splits chunks."
+        ),
+    )
 
     return p
 
@@ -135,6 +185,173 @@ def _ensure_config_exists(cfg_path: Path) -> None:
         )
 
 
+def _chunk_metadata(
+    rec_metadata: dict,
+    text: str,
+    heading_path: list[tuple[int, str]],
+    idx: int,
+    index_key: str = "chunk_index",
+) -> dict:
+    headings = [h for _, h in heading_path if h and h.strip()]
+    chapter = headings[0] if headings else rec_metadata.get("doc_title")
+    section = headings[-1] if headings else rec_metadata.get("doc_title")
+    anchor = slugify(section) if section else None
+    base_url = rec_metadata.get("source_url")
+    url = f"{base_url}#{anchor}" if base_url and anchor else base_url
+
+    return rec_metadata | {
+        "chapter": chapter,
+        "section": section,
+        "breadcrumbs": headings,
+        "token_count": count_tokens(text),
+        "url": url,
+        index_key: idx,
+    }
+
+
+def _embedding_text(chunk: Chunk) -> str:
+    breadcrumbs = chunk.metadata.get("breadcrumbs")
+    headings = (
+        [str(item).strip() for item in breadcrumbs if isinstance(item, str) and item.strip()]
+        if isinstance(breadcrumbs, list)
+        else []
+    )
+    if not headings:
+        doc_title = chunk.metadata.get("doc_title")
+        if isinstance(doc_title, str) and doc_title.strip():
+            headings = [doc_title.strip()]
+
+    if not headings:
+        return chunk.text
+    return f"{' > '.join(headings)}\n\n{chunk.text}"
+
+
+def _heading_paths_for_span(units: list[Unit], span: ChunkSpan) -> list[list[tuple[int, str]]]:
+    paths: list[list[tuple[int, str]]] = []
+    seen: set[tuple[tuple[int, str], ...]] = set()
+    for unit in units[span.start_unit : span.end_unit]:
+        path_key = tuple(unit.heading_path)
+        if path_key in seen:
+            continue
+        seen.add(path_key)
+        paths.append(unit.heading_path)
+    return paths
+
+
+def _headings_from_path(heading_path: list[tuple[int, str]]) -> list[str]:
+    return [title for _, title in heading_path if title and title.strip()]
+
+
+def _parent_text_with_headings(units: list[Unit], span: ChunkSpan) -> str:
+    parts: list[str] = []
+    previous_path: list[tuple[int, str]] = []
+
+    for unit in units[span.start_unit : span.end_unit]:
+        if unit.heading_path != previous_path:
+            common = 0
+            for previous_item, current_item in zip(previous_path, unit.heading_path, strict=False):
+                if previous_item != current_item:
+                    break
+                common += 1
+            for level, title in unit.heading_path[common:]:
+                if title and title.strip():
+                    parts.append(f"{'#' * level} {title.strip()}")
+            previous_path = unit.heading_path
+        parts.append(unit.text)
+
+    return "\n\n".join(parts).strip()
+
+
+def _parent_index_for_child(
+    child_start: int,
+    child_end: int,
+    parent_ranges: list[tuple[int, int]],
+) -> int:
+    best_index = 0
+    best_overlap = -1
+    for idx, (parent_start, parent_end) in enumerate(parent_ranges):
+        overlap = max(0, min(child_end, parent_end) - max(child_start, parent_start))
+        if overlap > best_overlap:
+            best_index = idx
+            best_overlap = overlap
+    return best_index
+
+
+def _validate_parent_storage_config(cfg: object, args: argparse.Namespace) -> None:
+    if cfg.parent_storage_mode == "none":
+        return
+    if cfg.parent_target_tokens <= args.target_tokens:
+        raise SystemExit(
+            "[!] parent_target_tokens must be greater than --target-tokens "
+            "when parent_storage_mode is enabled."
+        )
+    if cfg.parent_max_tokens <= args.max_tokens:
+        raise SystemExit(
+            "[!] parent_max_tokens must be greater than --max-tokens "
+            "when parent_storage_mode is enabled."
+        )
+
+
+def _validate_summary_config(cfg: object, args: argparse.Namespace) -> None:
+    if not cfg.synthetic_llm_summary:
+        return
+    if cfg.synthetic_llm_summary_group_max_tokens <= args.max_tokens:
+        raise SystemExit(
+            "[!] synthetic_llm_summary_group_max_tokens must be greater than "
+            "--max-tokens when synthetic_llm_summary is enabled."
+        )
+    if cfg.synthetic_llm_summary_max_sentences <= 0:
+        raise SystemExit("[!] synthetic_llm_summary_max_sentences must be positive.")
+    if args.llm_timeout <= 0:
+        raise SystemExit("[!] --llm-timeout must be positive.")
+    if args.llm_max_output_tokens <= 0:
+        raise SystemExit("[!] --llm-max-output-tokens must be positive.")
+
+
+def _generate_summaries(
+    llm: ChatClient,
+    groups: list,
+    max_sentences: int,
+) -> list:
+    results = []
+    with tqdm(groups, desc="Summarizing", unit="group") as progress:
+        for index, group in enumerate(progress, start=1):
+            file_path = group.chunks[0].metadata.get("file_path", "<unknown>")
+            progress.set_postfix_str(
+                f"file={Path(file_path).name}, tokens={group.token_count}",
+                refresh=True,
+            )
+            try:
+                results.append(generate_summary(llm, group, max_sentences=max_sentences))
+            except Exception as exc:
+                raise RuntimeError(
+                    "Synthetic summary failed for "
+                    f"group {index}/{len(groups)}, file={file_path}, "
+                    f"input_tokens={group.token_count}: {exc}"
+                ) from exc
+    return results
+
+
+def _parent_collection_name(collection: str) -> str:
+    return f"{collection}_parents"
+
+
+def _summary_collection_name(collection: str) -> str:
+    return f"{collection}_summaries"
+
+
+def _drop_parent_collection_if_requested(
+    client: QdrantClient,
+    collection: str,
+    drop: bool,
+) -> None:
+    if not drop:
+        return
+    parent_collection = _parent_collection_name(collection)
+    if client.collection_exists(parent_collection):
+        client.delete_collection(parent_collection)
+
+
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
 
@@ -156,10 +373,12 @@ def main(argv: list[str] | None = None) -> None:
     # 1) Load & validate config
     cfg_path = Path(args.sources_config_path or "sources.yaml").resolve()
     _ensure_config_exists(cfg_path)
-    resolved = validate_and_resolve(cfg_path)
+    ingestion_config = load_sources_config(cfg_path)
+    resolved = resolve_sources_config(ingestion_config)
 
     # 2) Choose exactly one source
     src_name, cfg = _pick_single_source(resolved, args.source)
+    _validate_summary_config(cfg, args)
 
     # 3) Instantiate adapter from registry
     adapter = build_source(src_name, cfg)
@@ -169,27 +388,60 @@ def main(argv: list[str] | None = None) -> None:
     print(f"[info] Source='{src_name}': discovered {len(docs)} documents")
 
     # 5) Chunk
-    chunker = MarkdownChunker(args.target_tokens, args.overlap_tokens, args.max_tokens)
+    chunker = MarkdownChunker(
+        args.target_tokens,
+        args.overlap_tokens,
+        args.max_tokens,
+        split_heading_level=args.split_heading_level,
+    )
+    _validate_parent_storage_config(cfg, args)
+    parent_chunker = MarkdownChunker(
+        cfg.parent_target_tokens,
+        cfg.parent_overlap_tokens,
+        cfg.parent_max_tokens,
+        split_headings=False,
+    )
+    parent_storage_enabled = cfg.parent_storage_mode != "none"
     chunks: list[Chunk] = []
+    parent_chunks: list[Chunk] = []
     for rec in tqdm(docs, desc="Chunking", unit="doc"):
         units = chunker.parse_units(rec.text)
-        raw_chunks = chunker.chunk(units)  # list[(text, heading_path)]
-        for idx, (text, heading_path) in enumerate(raw_chunks):
-            headings = [h for _, h in heading_path if h and h.strip()]
-            chapter = headings[0] if headings else rec.metadata.get("doc_title")
-            section = headings[-1] if headings else rec.metadata.get("doc_title")
-            anchor = slugify(section) if section else None
-            base_url = rec.metadata.get("source_url")
-            url = f"{base_url}#{anchor}" if base_url and anchor else base_url
+        parent_ids: list[str] = []
+        parent_ranges: list[tuple[int, int]] = []
+        if parent_storage_enabled:
+            parent_spans = parent_chunker.chunk_spans(units)
+            for parent_idx, parent_span in enumerate(parent_spans):
+                parent_text = _parent_text_with_headings(units, parent_span)
+                parent_heading_paths = _heading_paths_for_span(units, parent_span)
+                parent_id = make_parent_chunk_id(
+                    rec.metadata.get("file_path", ""),
+                    parent_idx,
+                    rec.metadata.get("git_commit"),
+                )
+                parent_meta = _chunk_metadata(
+                    rec.metadata,
+                    parent_text,
+                    parent_span.heading_path,
+                    parent_idx,
+                    index_key="parent_chunk_index",
+                )
+                parent_meta["breadcrumb_paths"] = [
+                    _headings_from_path(path) for path in parent_heading_paths
+                ]
+                parent_chunks.append(Chunk(id=parent_id, text=parent_text, metadata=parent_meta))
+                parent_ids.append(parent_id)
+                parent_ranges.append((parent_span.start_unit, parent_span.end_unit))
 
-            meta = rec.metadata | {
-                "chapter": chapter,
-                "section": section,
-                "breadcrumbs": headings,
-                "token_count": count_tokens(text),
-                "url": url,
-                "chunk_index": idx,
-            }
+        raw_chunks = chunker.chunk_spans(units)
+        for idx, span in enumerate(raw_chunks):
+            meta = _chunk_metadata(rec.metadata, span.text, span.heading_path, idx)
+            if parent_storage_enabled and parent_ids:
+                parent_idx = _parent_index_for_child(
+                    span.start_unit,
+                    span.end_unit,
+                    parent_ranges,
+                )
+                meta["parent_id"] = parent_ids[parent_idx]
 
             cid = make_chunk_id(
                 rec.metadata.get("file_path", ""),
@@ -197,32 +449,127 @@ def main(argv: list[str] | None = None) -> None:
                 rec.metadata.get("git_commit"),
             )
 
-            chunks.append(Chunk(id=str(cid), text=text, metadata=meta))
+            chunks.append(Chunk(id=str(cid), text=span.text, metadata=meta))
 
     print(f"[info] Produced {len(chunks)} chunks")
+    if parent_storage_enabled:
+        print(f"[info] Produced {len(parent_chunks)} parent chunks")
+
+    summary_chunks: list[Chunk] = []
+    if cfg.synthetic_llm_summary:
+        llm_api_base = _resolve_required("llm_api_base", args.llm_api_base, "LLM_API_BASE")
+        llm_model = _resolve_required("llm_model", args.llm_model, "LLM_MODEL")
+        llm_api_key = _resolve_optional(args.llm_api_key, "LLM_API_KEY", default="")
+        llm_provider_name = _resolve_optional(
+            args.llm_provider_name,
+            "LLM_PROVIDER_NAME",
+            default="",
+        )
+        llm = ChatClient(
+            api_base=llm_api_base,
+            model=llm_model,
+            api_key=llm_api_key,
+            timeout=args.llm_timeout,
+            max_output_tokens=args.llm_max_output_tokens,
+            insecure=bool(args.insecure),
+            # Keep local endpoint failures bounded and visible.
+            max_retries=0,
+            empty_response_retries=1,
+            provider_name=llm_provider_name or None,
+        )
+        summary_groups = group_chunks_for_summary(
+            chunks,
+            max_tokens=cfg.synthetic_llm_summary_group_max_tokens,
+        )
+        summary_results = _generate_summaries(
+            llm,
+            summary_groups,
+            max_sentences=cfg.synthetic_llm_summary_max_sentences,
+        )
+        summary_chunks = build_summary_chunks(summary_groups, summary_results)
+        print(f"[info] Produced {len(summary_chunks)} synthetic summary chunks")
 
     # 6) Encode
-    enc = RemoteOpenAIEncoder(
+    enc = ConfiguredNamedVectorEncoder(
+        config=ingestion_config.vector_index,
         api_base=embed_api_base,
         model=embed_model,
         api_key=embed_api_key,
         insecure=bool(args.insecure),
+        default_lang=getattr(cfg, "default_lang", None),
     )
-    embeddings = []
-    texts = [c.text for c in chunks]
-    for i in tqdm(range(0, len(texts), args.batch_size), desc="Embedding", unit="batch"):
-        batch = texts[i : i + args.batch_size]
-        embeddings.append(enc.encode(batch, batch_size=len(batch)))
-    import numpy as np
-
-    vecs = np.vstack(embeddings)
+    texts = [_embedding_text(c) for c in chunks]
+    vector_modes = ingestion_config.vector_index.vectors
+    with tqdm(total=len(vector_modes), desc="Embedding", unit="mode") as pbar:
+        named_vectors = enc.encode(texts, batch_size=args.batch_size)
+        pbar.update(len(vector_modes))
+    dimensions = enc.resolved_dimensions()
+    validate_named_vectors(chunks, ingestion_config.vector_index, named_vectors, dimensions)
 
     # 7) Upsert
     client = _preflight_qdrant(qdrant_url, qdrant_api_key)
-    ensure_collection_dense(client, args.collection, dim=enc.dim, drop=args.drop_collection)
-    upsert_dense(client, args.collection, chunks, vecs)
+    ensure_collection(
+        client,
+        args.collection,
+        ingestion_config.vector_index,
+        dimensions=dimensions,
+        drop=args.drop_collection,
+    )
+    _drop_parent_collection_if_requested(client, args.collection, args.drop_collection)
+    if parent_storage_enabled:
+        parent_collection = _parent_collection_name(args.collection)
+        ensure_payload_collection(client, parent_collection)
+        upsert_payload_points(
+            client,
+            parent_collection,
+            parent_chunks,
+            batch_size=args.qdrant_batch_size,
+        )
+    upsert_named(
+        client,
+        args.collection,
+        chunks,
+        ingestion_config.vector_index,
+        named_vectors,
+        dimensions,
+        batch_size=args.qdrant_batch_size,
+    )
+    if summary_chunks:
+        summary_texts = [build_summary_embedding_text(c) for c in summary_chunks]
+        with tqdm(total=len(vector_modes), desc="Embedding summaries", unit="mode") as pbar:
+            summary_vectors = enc.encode(summary_texts, batch_size=args.batch_size)
+            pbar.update(len(vector_modes))
+        validate_named_vectors(
+            summary_chunks,
+            ingestion_config.vector_index,
+            summary_vectors,
+            dimensions,
+        )
+        summary_collection = _summary_collection_name(args.collection)
+        ensure_collection(
+            client,
+            summary_collection,
+            ingestion_config.vector_index,
+            dimensions=dimensions,
+            drop=args.drop_collection,
+        )
+        upsert_named(
+            client,
+            summary_collection,
+            summary_chunks,
+            ingestion_config.vector_index,
+            summary_vectors,
+            dimensions,
+            batch_size=args.qdrant_batch_size,
+        )
 
     print(f"[ok] Ingested {len(chunks)} chunks into '{args.collection}' (source={src_name})")
+    if parent_storage_enabled:
+        print(f"[ok] Ingested {len(parent_chunks)} parent chunks into '{parent_collection}'")
+    if summary_chunks:
+        print(
+            f"[ok] Ingested {len(summary_chunks)} synthetic summaries into '{summary_collection}'"
+        )
 
 
 if __name__ == "__main__":
